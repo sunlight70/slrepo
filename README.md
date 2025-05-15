@@ -11,5 +11,5 @@ A chatbot that answers questions based on a PDF guide using OpenAI and FAISS.
 ## How to Run
 1. Clone this repo:
    ```bash
-   git clone https://github.com/yourusername/knowledge-chatbot.git
+   git clone https://github.com/sunlight70/knowledge-chatbot.git
    cd knowledge-chatbot
