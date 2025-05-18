@@ -80,7 +80,7 @@ st.title("📚KB Chatbot")
 #uploaded_file = st.file_uploader("Upload a PDF Guide", type="pdf")
 
 #from your local directory
-file_path = "./fy24_acquisition_guide_fy2024_v4.pdf"
+file_path = "./Guide.pdf"
 with open(file_path, "rb") as f:
         uploaded_file = f  # Mimic file_uploader's output (a file-like object)
 
