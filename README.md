@@ -12,4 +12,4 @@ A chatbot that answers questions based on a PDF guide using OpenAI and FAISS.
 1. Clone this repo:
    ```bash
    git clone https://github.com/sunlight70/slrepo
-   cd knowledge-chatbot
+   cd slrepo
