@@ -1,83 +1,114 @@
 import streamlit as st
 import fitz  # PyMuPDF
-import openai
 import faiss
 import numpy as np
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+import subprocess
 import os
+os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
+from langchain_community.vectorstores import FAISS
 
-# Load API Key from .env
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+from langchain_community.document_loaders import PyPDFLoader
 
-# ----- Helper Functions -----
-@st.cache_data
+import torch
+torch.classes.__path__ = []
+import streamlit as st
+
+# Change this to your actual Ollama install path
+OLLAMA_PATH = r"C:\Users\Shawn\AppData\Local\Programs\Ollama\ollama.exe"
+
+# Load embedding model
+embedder = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Extract text from PDF
 def extract_text_from_pdf(file_path):
     doc = fitz.open(file_path)
     text = ""
     for page in doc:
         text += page.get_text()
     return text
+    return text
 
-@st.cache_data
-def split_text(text, chunk_size=1000, chunk_overlap=100):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    return splitter.split_text(text)
+# Split text into chunks
+def split_text(text, chunk_size=1000, overlap=100):
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunks.append(' '.join(words[i:i + chunk_size]))
+    return chunks
 
-@st.cache_data
-def get_embedding(text, model="text-embedding-ada-002"):
-    result = openai.Embedding.create(input=[text], model=model)
-    return result["data"][0]["embedding"]
+# Embed chunks and create FAISS index
+def create_faiss_index(chunks):
+    embeddings = embedder.encode(chunks)
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dim)
+    index.add(embeddings)
+    return index, embeddings
 
-@st.cache_data
-def embed_chunks(chunks):
-    return [get_embedding(chunk) for chunk in chunks]
-
-@st.cache_resource
-def create_faiss_index(embeddings):
-    dimension = len(embeddings[0])
-    index = faiss.IndexFlatL2(dimension)
-    index.add(np.array(embeddings).astype('float32'))
-    return index
-
+# Search FAISS index
 def search_index(query, index, chunks, top_k=3):
-    query_embedding = np.array([get_embedding(query)]).astype('float32')
-    distances, indices = index.search(query_embedding, top_k)
-    return [chunks[i] for i in indices[0]]
+    query_embedding = embedder.encode([query])
+    D, I = index.search(np.array(query_embedding), top_k)
+    return [chunks[i] for i in I[0]]
 
-def generate_answer(question, context_chunks):
-    context = "\n\n".join(context_chunks)
-    prompt = f"""You are a helpful assistant. Use the following guide information to answer the user's question accurately.\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"""
+# Run local model via Ollama with full path
+##def generate_answer_ollama(context, question, model="llama2:7b"):
+def generate_answer_ollama(context, question, model="llama3"):
+    prompt = f"""You are a helpful assistant. Use the following context to answer the question accurately.
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=500
-    )
-    return response['choices'][0]['message']['content']
+Context:
+{context}
 
-# ----- Streamlit App -----
-st.set_page_config(page_title="Knowledge Guide Chatbot", layout="wide")
+Question: {question}
+Answer:"""
+    try:
+        result = subprocess.run([OLLAMA_PATH, "run", model, prompt], capture_output=True, text=True, encoding='utf-8', timeout=300)
+        print("Ollama stdout:", result.stdout)
+        print("Ollama stderr:", result.stderr)
+        if result.returncode != 0:
+            raise RuntimeError(f"Ollama returned error code {result.returncode}: {result.stderr}")
+        return result.stdout.strip()
+    except Exception as e:
+        st.error(f"Error running Ollama: {e}")
+        return "Failed to generate answer."
 
-st.title("📚 Knowledge-Based Chatbot (PDF Q&A)")
-st.markdown("Ask questions based on the uploaded PDF guide.")
 
-uploaded_file = st.file_uploader("Upload your PDF guide", type="pdf")
+# Streamlit UI
+st.set_page_config(page_title="Local PDF Chatbot (Ollama Windows)", layout="wide")
+st.title("📚 Local PDF Chatbot (Ollama on Windows)")
+#upload any file of your choice
+#uploaded_file = st.file_uploader("Upload a PDF Guide", type="pdf")
+
+#from your local directory
+file_path = "./fy24_acquisition_guide_fy2024_v4.pdf"
+with open(file_path, "rb") as f:
+        uploaded_file = f  # Mimic file_uploader's output (a file-like object)
 
 if uploaded_file:
-    with st.spinner("Processing PDF... This may take a minute."):
-        guide_text = extract_text_from_pdf(uploaded_file)
-        chunks = split_text(guide_text)
-        embeddings = embed_chunks(chunks)
-        index = create_faiss_index(embeddings)
-        st.success(f"PDF processed! {len(chunks)} chunks indexed.")
+    with st.spinner("Processing PDF..."):
+        text = extract_text_from_pdf(uploaded_file)
+        chunks = split_text(text)
+        index, embeddings = create_faiss_index(chunks)
+        st.success(f"Indexed {len(chunks)} chunks from PDF.")
 
-    user_question = st.text_input("Ask your question here:")
+    query = st.text_input("Ask your question:")
 
-    if user_question:
-        with st.spinner("Searching for answer..."):
-            relevant_chunks = search_index(user_question, index, chunks)
-            answer = generate_answer(user_question, relevant_chunks)
+    if query:
+        with st.spinner("Generating answer..."):
+            relevant_chunks = search_index(query, index, chunks)
+            context = "\n\n".join(relevant_chunks)
+            answer = generate_answer_ollama(context, query)
             st.markdown(f"### ✅ Answer:\n{answer}")
+
+def generate_answer_ollama(context, question, model="llama3"):
+    prompt = f"""You are a helpful assistant. Use the following context to answer the question accurately.
+
+Context:
+{context}
+
+Question: {question}
+Answer:"""
+    result = subprocess.run([OLLAMA_PATH, "run", model, prompt], capture_output=True, text=True)
+    print("Ollama stdout:", result.stdout)
+    print("Ollama stderr:", result.stderr)
+    return result.stdout.strip()
