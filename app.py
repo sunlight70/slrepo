@@ -5,17 +5,15 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 import subprocess
 import os
-os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
-from langchain_community.vectorstores import FAISS
 
+# Disable file watcher for Streamlit
+os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
+
+from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import PyPDFLoader
 
 import torch
 torch.classes.__path__ = []
-import streamlit as st
-
-# Change this to your actual Ollama install path
-OLLAMA_PATH = r"C:\Users\Shawn\AppData\Local\Programs\Ollama\ollama.exe"
 
 # Load embedding model
 embedder = SentenceTransformer('all-MiniLM-L6-v2')
@@ -26,7 +24,6 @@ def extract_text_from_pdf(file_path):
     text = ""
     for page in doc:
         text += page.get_text()
-    return text
     return text
 
 # Split text into chunks
@@ -51,8 +48,7 @@ def search_index(query, index, chunks, top_k=3):
     D, I = index.search(np.array(query_embedding), top_k)
     return [chunks[i] for i in I[0]]
 
-# Run local model via Ollama with full path
-##def generate_answer_ollama(context, question, model="llama2:7b"):
+# Run local model via Ollama
 def generate_answer_ollama(context, question, model="llama3"):
     prompt = f"""You are a helpful assistant. Use the following context to answer the question accurately.
 
@@ -62,34 +58,42 @@ Context:
 Question: {question}
 Answer:"""
     try:
-        result = subprocess.run([OLLAMA_PATH, "run", model, prompt], capture_output=True, text=True, encoding='utf-8', timeout=300)
-        print("Ollama stdout:", result.stdout)
-        print("Ollama stderr:", result.stderr)
+        result = subprocess.run(
+            ["ollama", "run", model, prompt],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
         if result.returncode != 0:
-            raise RuntimeError(f"Ollama returned error code {result.returncode}: {result.stderr}")
+            raise RuntimeError(f"Ollama error: {result.stderr}")
         return result.stdout.strip()
+    except FileNotFoundError:
+        st.error("❌ Ollama is not installed or not in your PATH.")
+        return "Error: Ollama not found."
     except Exception as e:
-        st.error(f"Error running Ollama: {e}")
-        return "Failed to generate answer."
-
+        st.error(f"❌ Failed to run Ollama: {e}")
+        return "Error generating response."
 
 # Streamlit UI
-st.set_page_config(page_title="KB Chatbot (Ollama Windows)", layout="wide")
-st.title("📚KB Chatbot")
-#upload any file of your choice
-#uploaded_file = st.file_uploader("Upload a PDF Guide", type="pdf")
+st.set_page_config(page_title="KB Chatbot (Ollama)", layout="wide")
+st.title("📚 KB Chatbot")
 
-#from your local directory
-file_path = "./Guide.pdf"
-with open(file_path, "rb") as f:
-        uploaded_file = f  # Mimic file_uploader's output (a file-like object)
+# Load PDF file
+file_path = "./fy24_acquisition_guide_fy2024_v4.pdf"
+try:
+    with open(file_path, "rb") as f:
+        uploaded_file = f  # Mimic file_uploader's output
+except FileNotFoundError:
+    uploaded_file = None
+    st.error(f"❌ PDF file not found at path: {file_path}")
 
+# Process PDF
 if uploaded_file:
     with st.spinner("Processing PDF..."):
         text = extract_text_from_pdf(uploaded_file)
         chunks = split_text(text)
         index, embeddings = create_faiss_index(chunks)
-        st.success(f"Indexed {len(chunks)} chunks from PDF.")
+        st.success(f"✅ Indexed {len(chunks)} chunks from PDF.")
 
     query = st.text_input("Ask your question:")
 
@@ -99,16 +103,3 @@ if uploaded_file:
             context = "\n\n".join(relevant_chunks)
             answer = generate_answer_ollama(context, query)
             st.markdown(f"### ✅ Answer:\n{answer}")
-
-def generate_answer_ollama(context, question, model="llama3"):
-    prompt = f"""You are a helpful assistant. Use the following context to answer the question accurately.
-
-Context:
-{context}
-
-Question: {question}
-Answer:"""
-    result = subprocess.run([OLLAMA_PATH, "run", model, prompt], capture_output=True, text=True)
-    print("Ollama stdout:", result.stdout)
-    print("Ollama stderr:", result.stderr)
-    return result.stdout.strip()
