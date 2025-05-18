@@ -74,8 +74,8 @@ Answer:"""
 
 
 # Streamlit UI
-st.set_page_config(page_title="Local PDF Chatbot (Ollama Windows)", layout="wide")
-st.title("📚 Local PDF Chatbot (Ollama on Windows)")
+st.set_page_config(page_title="KB Chatbot (Ollama Windows)", layout="wide")
+st.title("📚KB Chatbot")
 #upload any file of your choice
 #uploaded_file = st.file_uploader("Upload a PDF Guide", type="pdf")
 
