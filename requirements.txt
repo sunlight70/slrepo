@@ -2,3 +2,6 @@ streamlit
 faiss-cpu
 pymupdf
 sentence-transformers
+langchain
+langchain-community
+openai
